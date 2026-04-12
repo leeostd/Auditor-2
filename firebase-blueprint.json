@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with role and basic info",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "employee"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Receipt": {
+      "title": "PIX Receipt",
+      "description": "Audited PIX receipt data",
+      "type": "object",
+      "properties": {
+        "transactionId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "payerName": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "bank": { "type": "string" },
+        "status": { "type": "string", "enum": ["Valid", "Fraud", "Incomplete", "Divergent"] },
+        "uploadedBy": { "type": "string", "description": "UID of the user who uploaded" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["transactionId", "amount", "status", "uploadedBy"]
+    },
+    "Receiver": {
+      "title": "Authorized Receiver",
+      "description": "Authorized receiver name for PIX validation",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "Log of actions performed in the system",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "action", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "Receipt",
+      "description": "Audited receipts"
+    },
+    "/receivers/{receiverId}": {
+      "schema": "Receiver",
+      "description": "Authorized receivers list"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "System activity logs"
+    }
+  }
+}
