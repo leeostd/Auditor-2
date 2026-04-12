@@ -1,10 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { collection, addDoc, query, getDocs, where } from 'firebase/firestore';
+import { collection, addDoc, query, getDocs, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { extractReceiptData } from '../services/geminiService';
-import { UserProfile, Receipt, Receiver, ReceiptStatus } from '../types';
-import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { UserProfile, Receipt, Receiver, ReceiptStatus, Employee } from '../types';
+import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -16,6 +16,8 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<Receipt | null>(null);
   const [authorizedReceivers, setAuthorizedReceivers] = useState<string[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
 
   useEffect(() => {
     const fetchReceivers = async () => {
@@ -24,14 +26,26 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       setAuthorizedReceivers(snapshot.docs.map(doc => doc.data().name.toLowerCase()));
     };
     fetchReceivers();
+
+    const unsubscribeEmployees = onSnapshot(collection(db, 'employees'), (snapshot) => {
+      setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+    });
+
+    return () => unsubscribeEmployees();
   }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
+    if (!selectedEmployeeId) {
+      toast.error('Por favor, selecione o funcionário que recebeu o PIX primeiro.');
+      return;
+    }
     
     const file = acceptedFiles[0];
     setIsProcessing(true);
     setResult(null);
+
+    const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
 
     try {
       // Convert to base64
@@ -49,15 +63,40 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       let status: ReceiptStatus = 'Valid';
       
       // 1. Check for incomplete data
-      if (!extracted.transactionId || extracted.amount === null || isNaN(extracted.amount)) {
+      // For PIX, transactionId is required. For Lottery, it might be a control number.
+      if (!extracted.amount || isNaN(extracted.amount) || !extracted.date || !extracted.receiverName) {
         status = 'Incomplete';
       }
 
-      // 2. Check for duplicate (simplified for demo, should query Firestore)
-      const duplicateQuery = query(collection(db, 'receipts'), where('transactionId', '==', extracted.transactionId));
-      const duplicateSnap = await getDocs(duplicateQuery);
-      if (!duplicateSnap.empty) {
-        status = 'Fraud';
+      // 2. Check for duplicate
+      const receiptsRef = collection(db, 'receipts');
+      let duplicateQuery;
+
+      if (extracted.type === 'pix' && extracted.transactionId) {
+        duplicateQuery = query(receiptsRef, where('transactionId', '==', extracted.transactionId));
+      } else if (extracted.type === 'lottery') {
+        // For lottery, check combination of date, amount and receiver
+        duplicateQuery = query(receiptsRef, 
+          where('type', '==', 'lottery'),
+          where('amount', '==', extracted.amount),
+          where('date', '==', extracted.date),
+          where('receiverName', '==', extracted.receiverName)
+        );
+      } else if (extracted.type === 'credit_card') {
+        // For credit card, use transactionId (auth code) or combination
+        duplicateQuery = query(receiptsRef, 
+          where('type', '==', 'credit_card'),
+          where('transactionId', '==', extracted.transactionId),
+          where('amount', '==', extracted.amount),
+          where('date', '==', extracted.date)
+        );
+      }
+
+      if (duplicateQuery) {
+        const duplicateSnap = await getDocs(duplicateQuery);
+        if (!duplicateSnap.empty) {
+          status = 'Fraud';
+        }
       }
 
       // 3. Check for receiver divergence
@@ -72,15 +111,22 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       }
 
       const newReceipt: Receipt = {
+        type: extracted.type,
         transactionId: extracted.transactionId || 'N/A',
         amount: extracted.amount || 0,
         date: extracted.date || new Date().toISOString(),
         payerName: extracted.payerName || 'Desconhecido',
         receiverName: extracted.receiverName || 'Desconhecido',
         bank: extracted.bank || 'N/A',
+        location: extracted.location || '',
+        cnpj: extracted.cnpj || '',
         status,
         uploadedBy: profile?.uid || '',
+        uploaderName: profile?.displayName || 'Desconhecido',
+        employeeId: selectedEmployeeId,
+        employeeName: selectedEmployee?.name || 'Desconhecido',
         createdAt: new Date().toISOString(),
+        imageUrl: base64,
       };
 
       // Save to Firestore
@@ -90,7 +136,7 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       await addDoc(collection(db, 'activity_logs'), {
         userId: profile?.uid,
         action: 'RECEIPT_AUDITED',
-        details: `Comprovante ${extracted.transactionId} auditado como ${status}`,
+        details: `Comprovante ${extracted.transactionId} auditado como ${status}. Recebido por: ${selectedEmployee?.name}`,
         timestamp: new Date().toISOString()
       });
 
@@ -102,40 +148,64 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
     } finally {
       setIsProcessing(false);
     }
-  }, [profile, authorizedReceivers]);
+  }, [profile, authorizedReceivers, selectedEmployeeId, employees]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'image/*': [], 'application/pdf': [] },
     multiple: false,
-    disabled: isProcessing
+    disabled: isProcessing || !selectedEmployeeId
   } as any);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-6">
       <header className="text-center">
-        <h1 className="text-3xl font-bold text-slate-900">Auditoria de Comprovante</h1>
-        <p className="text-slate-500 mt-2">Faça o upload do comprovante PIX para análise instantânea.</p>
+        <h1 className="text-xl font-bold text-slate-900">Auditoria de Comprovante</h1>
+        <p className="text-xs text-slate-500 mt-1">Selecione o funcionário e envie o comprovante.</p>
       </header>
+
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-3">
+        <label className="block text-xs font-bold text-slate-700">Quem recebeu este pagamento?</label>
+        <div className="relative">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <select 
+            className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-blue-500 appearance-none font-medium text-slate-900 text-sm"
+            value={selectedEmployeeId}
+            onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            disabled={isProcessing}
+          >
+            <option value="">Selecione um funcionário...</option>
+            {employees.map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.name}</option>
+            ))}
+          </select>
+        </div>
+        {!selectedEmployeeId && (
+          <p className="text-amber-600 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            Você precisa selecionar um funcionário antes de fazer o upload.
+          </p>
+        )}
+      </div>
 
       <div 
         {...getRootProps()} 
         className={`
-          relative border-3 border-dashed rounded-3xl p-12 text-center transition-all cursor-pointer
+          relative border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer
           ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-400'}
-          ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+          ${(isProcessing || !selectedEmployeeId) ? 'opacity-50 cursor-not-allowed' : ''}
         `}
       >
         <input {...getInputProps()} />
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-            {isProcessing ? <Loader2 className="w-10 h-10 animate-spin" /> : <Upload className="w-10 h-10" />}
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+            {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
           </div>
           <div>
-            <p className="text-lg font-bold text-slate-900">
+            <p className="text-base font-bold text-slate-900">
               {isProcessing ? 'Processando com IA...' : 'Arraste ou clique para enviar'}
             </p>
-            <p className="text-slate-500">Suporta imagens (PNG, JPG) e PDF</p>
+            <p className="text-xs text-slate-500">Suporta imagens (PNG, JPG) e PDF</p>
           </div>
         </div>
       </div>
@@ -145,30 +215,40 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden"
+            className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden"
           >
-            <div className={`p-6 flex items-center justify-between ${
+            <div className={`p-4 flex items-center justify-between ${
               result.status === 'Valid' ? 'bg-emerald-50 text-emerald-700' :
               result.status === 'Fraud' ? 'bg-red-50 text-red-700' :
               'bg-amber-50 text-amber-700'
             }`}>
-              <div className="flex items-center gap-3">
-                {result.status === 'Valid' ? <CheckCircle2 /> : <AlertCircle />}
-                <span className="font-bold text-lg">Resultado: {result.status}</span>
+              <div className="flex items-center gap-2">
+                {result.status === 'Valid' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                <span className="font-bold text-base">Resultado: {result.status}</span>
               </div>
-              <button onClick={() => setResult(null)} className="hover:opacity-70"><X /></button>
+              <button onClick={() => setResult(null)} className="hover:opacity-70"><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
-                <DataRow label="ID Transação" value={result.transactionId} />
+                <DataRow 
+                  label="Tipo" 
+                  value={
+                    result.type === 'pix' ? 'PIX' : 
+                    result.type === 'lottery' ? 'Depósito Lotérica' : 
+                    'Cartão de Crédito'
+                  } 
+                />
+                <DataRow label="ID / Controle" value={result.transactionId} />
                 <DataRow label="Valor" value={`R$ ${result.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
                 <DataRow label="Data" value={result.date} />
               </div>
               <div className="space-y-4">
                 <DataRow label="Pagador" value={result.payerName} />
                 <DataRow label="Recebedor" value={result.receiverName} />
-                <DataRow label="Banco" value={result.bank} />
+                <DataRow label="Banco / Adquirente" value={result.bank} />
+                {result.location && <DataRow label="Localidade" value={result.location} />}
+                {result.cnpj && <DataRow label="CNPJ" value={result.cnpj} />}
               </div>
             </div>
           </motion.div>

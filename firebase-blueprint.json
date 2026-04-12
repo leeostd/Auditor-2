@@ -15,22 +15,39 @@
       "required": ["uid", "email", "role"]
     },
     "Receipt": {
-      "title": "PIX Receipt",
-      "description": "Audited PIX receipt data",
+      "title": "Receipt",
+      "description": "Audited receipt data (PIX, Lottery or Credit Card)",
       "type": "object",
       "properties": {
+        "type": { "type": "string", "enum": ["pix", "lottery", "credit_card"] },
         "transactionId": { "type": "string" },
         "amount": { "type": "number" },
         "date": { "type": "string", "format": "date-time" },
         "payerName": { "type": "string" },
         "receiverName": { "type": "string" },
         "bank": { "type": "string" },
+        "location": { "type": "string" },
+        "cnpj": { "type": "string" },
         "status": { "type": "string", "enum": ["Valid", "Fraud", "Incomplete", "Divergent"] },
         "uploadedBy": { "type": "string", "description": "UID of the user who uploaded" },
+        "uploaderName": { "type": "string", "description": "Name of the user who uploaded" },
+        "employeeId": { "type": "string", "description": "ID of the employee who received the payment" },
+        "employeeName": { "type": "string", "description": "Name of the employee who received the payment" },
         "createdAt": { "type": "string", "format": "date-time" },
         "imageUrl": { "type": "string" }
       },
-      "required": ["transactionId", "amount", "status", "uploadedBy"]
+      "required": ["type", "transactionId", "amount", "status", "uploadedBy", "employeeId"]
+    },
+    "Employee": {
+      "title": "Receiving Employee",
+      "description": "Employee who can receive PIX payments",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name"]
     },
     "Receiver": {
       "title": "Authorized Receiver",
@@ -72,6 +89,10 @@
     "/activity_logs/{logId}": {
       "schema": "ActivityLog",
       "description": "System activity logs"
+    },
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Employees who receive PIX"
     }
   }
 }

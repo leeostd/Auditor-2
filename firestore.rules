@@ -40,10 +40,16 @@ service cloud.firestore {
     }
 
     function isValidReceipt(data) {
-      return data.keys().hasAll(['transactionId', 'amount', 'status', 'uploadedBy']) &&
+      return data.keys().hasAll(['type', 'transactionId', 'amount', 'status', 'uploadedBy', 'employeeId']) &&
+             data.type in ['pix', 'lottery', 'credit_card'] &&
              data.amount is number &&
              data.status in ['Valid', 'Fraud', 'Incomplete', 'Divergent'] &&
              data.uploadedBy == request.auth.uid;
+    }
+
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() > 0;
     }
 
     function isValidReceiver(data) {
@@ -86,6 +92,13 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidLog(request.resource.data);
       allow update: if false;
       allow delete: if false;
+    }
+
+    match /employees/{employeeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidEmployee(request.resource.data);
+      allow update: if isAdmin() && isValidEmployee(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }

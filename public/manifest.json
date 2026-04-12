@@ -1,0 +1,17 @@
+{
+  "name": "Auditor PIX Pro",
+  "short_name": "Auditor PIX",
+  "description": "Sistema de Auditoria de Comprovantes PIX",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
