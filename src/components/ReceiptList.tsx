@@ -6,7 +6,7 @@ import { Search, Filter, Calendar, Download, Eye, X, User, UserCheck, Users } fr
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ReceiptListProps {
   profile: UserProfile | null;

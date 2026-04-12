@@ -12,7 +12,7 @@ import { ReceiptList } from './components/ReceiptList';
 import { ReceiverManagement } from './components/ReceiverManagement';
 import { UserManagement } from './components/UserManagement';
 import { LogIn, ShieldCheck, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);

@@ -6,7 +6,7 @@ import { extractReceiptData } from '../services/geminiService';
 import { UserProfile, Receipt, Receiver, ReceiptStatus, Employee } from '../types';
 import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User } from 'lucide-react';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ReceiptUploadProps {
   profile: UserProfile | null;

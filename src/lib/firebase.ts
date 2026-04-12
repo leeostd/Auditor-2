@@ -1,7 +1,16 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+const firebaseConfig = {
+  "projectId": "auditor-2-b1b88",
+  "appId": "1:762826992579:web:b2e7cb8c792552e0202b76",
+  "apiKey": "AIzaSyDPkGUmpEUPvjTjmAzaQQZ1PP6jGkfpC2s",
+  "authDomain": "auditor-2-b1b88.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-3d519558-1860-4eac-970e-da9408ef778e",
+  "storageBucket": "auditor-2-b1b88.firebasestorage.app",
+  "messagingSenderId": "762826992579",
+  "measurementId": ""
+};
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);

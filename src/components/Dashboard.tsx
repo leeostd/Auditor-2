@@ -25,7 +25,7 @@ import {
 } from 'recharts';
 import { format, subDays, startOfDay, isAfter } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 interface DashboardProps {
   profile: UserProfile | null;
