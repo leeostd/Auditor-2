@@ -39,29 +39,45 @@ export default function App() {
     });
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Auth state changed:', firebaseUser?.email);
       setUser(firebaseUser);
       
       if (firebaseUser) {
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        
-        if (!userDoc.exists()) {
-          // Check if first admin
-          const isAdmin = firebaseUser.email === "elionilsonp13.upal@gmail.com";
-          const newProfile: UserProfile = {
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (!userDoc.exists()) {
+            console.log('Creating new profile for:', firebaseUser.email);
+            const isAdmin = firebaseUser.email === "elionilsonp13.upal@gmail.com";
+            const newProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || '',
+              photoURL: firebaseUser.photoURL || '',
+              role: isAdmin ? 'admin' : 'employee',
+              createdAt: new Date().toISOString()
+            };
+            await setDoc(userDocRef, newProfile);
+            setProfile(newProfile);
+          } else {
+            console.log('Profile loaded:', userDoc.data()?.role);
+            setProfile(userDoc.data() as UserProfile);
+          }
+          logActivity(firebaseUser.uid, 'LOGIN', `Usuário ${firebaseUser.email} entrou no sistema.`);
+        } catch (error) {
+          console.error('Error loading/creating profile:', error);
+          toast.error('Erro ao carregar seu perfil. Tente atualizar a página.');
+          // Fallback profile if Firestore fails but Auth succeeded
+          setProfile({
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
             displayName: firebaseUser.displayName || '',
             photoURL: firebaseUser.photoURL || '',
-            role: isAdmin ? 'admin' : 'employee',
+            role: firebaseUser.email === "elionilsonp13.upal@gmail.com" ? 'admin' : 'employee',
             createdAt: new Date().toISOString()
-          };
-          await setDoc(userDocRef, newProfile);
-          setProfile(newProfile);
-        } else {
-          setProfile(userDoc.data() as UserProfile);
+          });
         }
-        logActivity(firebaseUser.uid, 'LOGIN', `Usuário ${firebaseUser.email} entrou no sistema.`);
       } else {
         setProfile(null);
       }
