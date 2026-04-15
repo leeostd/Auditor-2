@@ -66,28 +66,38 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleLogin = async () => {
+    if (isLoggingIn) return;
     setIsLoggingIn(true);
+    
+    // Safety timeout to unlock button if login hangs
+    const timeoutId = setTimeout(() => {
+      setIsLoggingIn(false);
+    }, 15000);
+
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       
       if (isMobile) {
-        // Mobile devices often work better with redirect
         await signInWithGoogleRedirect();
       } else {
-        await signInWithGoogle();
+        const result = await signInWithGoogle();
+        if (result.user) {
+          toast.success('Login realizado com sucesso!');
+        }
       }
     } catch (error: any) {
+      clearTimeout(timeoutId);
       console.error('Login error:', error);
       const errorCode = error.code || 'unknown';
       
       if (errorCode === 'auth/popup-blocked') {
-        toast.error('O bloqueador de popups impediu o login. Tente habilitar popups ou use outro navegador.');
+        toast.error('O bloqueador de popups impediu o login. Por favor, habilite popups.');
       } else if (errorCode === 'auth/unauthorized-domain') {
         toast.error(`Domínio não autorizado: ${window.location.hostname}. Adicione este domínio no Console do Firebase.`);
       } else if (errorCode === 'auth/cancelled-popup-request') {
         // User closed the popup
       } else {
-        toast.error(`Erro ao entrar (${errorCode}). Tente novamente.`);
+        toast.error(`Erro (${errorCode}): ${error.message}`);
       }
       setIsLoggingIn(false);
     }
