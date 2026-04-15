@@ -68,18 +68,27 @@ export default function App() {
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
-      // Prefer signInWithPopup as it's more reliable in this environment
-      await signInWithGoogle();
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        // Mobile devices often work better with redirect
+        await signInWithGoogleRedirect();
+      } else {
+        await signInWithGoogle();
+      }
     } catch (error: any) {
       console.error('Login error:', error);
-      if (error.code === 'auth/popup-blocked') {
+      const errorCode = error.code || 'unknown';
+      
+      if (errorCode === 'auth/popup-blocked') {
         toast.error('O bloqueador de popups impediu o login. Tente habilitar popups ou use outro navegador.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
+      } else if (errorCode === 'auth/unauthorized-domain') {
+        toast.error(`Domínio não autorizado: ${window.location.hostname}. Adicione este domínio no Console do Firebase.`);
+      } else if (errorCode === 'auth/cancelled-popup-request') {
         // User closed the popup
       } else {
-        toast.error('Erro ao entrar com Google. Tente novamente.');
+        toast.error(`Erro ao entrar (${errorCode}). Tente novamente.`);
       }
-    } finally {
       setIsLoggingIn(false);
     }
   };
