@@ -68,36 +68,19 @@ export default function App() {
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
-      // Check if mobile or standalone (PWA)
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
-
-      if (isMobile || isStandalone) {
-        await signInWithGoogleRedirect();
-      } else {
-        await signInWithGoogle();
-      }
+      // Prefer signInWithPopup as it's more reliable in this environment
+      await signInWithGoogle();
     } catch (error: any) {
       console.error('Login error:', error);
       if (error.code === 'auth/popup-blocked') {
-        toast.error('O bloqueador de popups impediu o login. Tentando redirecionamento...');
-        try {
-          await signInWithGoogleRedirect();
-        } catch (redirectError) {
-          toast.error('Erro ao redirecionar para login.');
-        }
+        toast.error('O bloqueador de popups impediu o login. Tente habilitar popups ou use outro navegador.');
       } else if (error.code === 'auth/cancelled-popup-request') {
         // User closed the popup
       } else {
         toast.error('Erro ao entrar com Google. Tente novamente.');
       }
     } finally {
-      // Don't set loading false if redirecting, as the page will unload
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
-      if (!isMobile && !isStandalone) {
-        setIsLoggingIn(false);
-      }
+      setIsLoggingIn(false);
     }
   };
 
