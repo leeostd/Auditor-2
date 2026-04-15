@@ -87,7 +87,42 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [showEmailLogin, setShowEmailLogin] = useState(false);
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error('Preencha todos os campos.');
+      return;
+    }
+    setIsLoggingIn(true);
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, email, password);
+        toast.success('Conta criada com sucesso!');
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success('Login realizado!');
+      }
+    } catch (error: any) {
+      console.error('Email auth error:', error);
+      const errorCode = error.code;
+      if (errorCode === 'auth/user-not-found' || errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
+        toast.error('E-mail ou senha incorretos.');
+      } else if (errorCode === 'auth/email-already-in-use') {
+        toast.error('Este e-mail já está em uso.');
+      } else if (errorCode === 'auth/weak-password') {
+        toast.error('A senha deve ter pelo menos 6 caracteres.');
+      } else {
+        toast.error(`Erro: ${errorCode}`);
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (isLoggingIn) return;
@@ -95,9 +130,7 @@ export default function App() {
     
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      
       if (isMobile) {
-        // Força redirecionamento no mobile para evitar fechamento de popup
         await signInWithGoogleRedirect();
       } else {
         const result = await signInWithGoogle();
@@ -108,13 +141,11 @@ export default function App() {
     } catch (error: any) {
       console.error('Login error:', error);
       const errorCode = error.code || 'unknown';
-      
       if (errorCode === 'auth/popup-blocked') {
-        toast.error('O navegador bloqueou a janela. Por favor, use o Chrome ou habilite popups.');
-      } else if (errorCode === 'auth/unauthorized-domain') {
-        toast.error(`Domínio não autorizado no Firebase: ${window.location.hostname}`);
+        toast.error('O navegador bloqueou a janela. Use o login por e-mail abaixo ou habilite popups.');
+        setShowEmailLogin(true);
       } else {
-        toast.error(`Erro técnico: ${errorCode}. Verifique o console.`);
+        toast.error(`Erro técnico: ${errorCode}`);
       }
       setIsLoggingIn(false);
     }
@@ -136,27 +167,90 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl p-8 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
         >
-          <div className="flex justify-center mb-8">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200 dark:shadow-none">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
               <ShieldCheck className="w-10 h-10 text-white" />
             </div>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white text-center mb-2">Auditor PIX Pro</h1>
           <p className="text-slate-600 dark:text-slate-400 text-center text-sm mb-8">
-            Sistema inteligente de auditoria e prevenção de fraudes em comprovantes PIX.
+            Sistema inteligente de auditoria e prevenção de fraudes.
           </p>
-          <button
-            onClick={handleLogin}
-            disabled={isLoggingIn}
-            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-sm rounded-2xl border-2 border-slate-100 dark:border-slate-700 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {isLoggingIn ? (
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            ) : (
-              <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-            )}
-            {isLoggingIn ? 'Conectando...' : 'Entrar com Google'}
-          </button>
+
+          {!showEmailLogin ? (
+            <div className="space-y-4">
+              <button
+                onClick={handleLogin}
+                disabled={isLoggingIn}
+                className="w-full flex items-center justify-center gap-3 py-3.5 px-6 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-sm rounded-2xl border-2 border-slate-100 dark:border-slate-700 transition-all active:scale-95 disabled:opacity-70"
+              >
+                {isLoggingIn ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                ) : (
+                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+                )}
+                {isLoggingIn ? 'Conectando...' : 'Entrar com Google'}
+              </button>
+              
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-100 dark:border-slate-800"></span></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-white dark:bg-slate-900 px-2 text-slate-400">Ou</span></div>
+              </div>
+
+              <button
+                onClick={() => setShowEmailLogin(true)}
+                className="w-full py-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Entrar com e-mail e senha
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">E-mail</label>
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                  placeholder="seu@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Senha</label>
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                  placeholder="••••••"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all active:scale-95 disabled:opacity-70"
+              >
+                {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : (isSignUp ? 'Criar Conta' : 'Entrar')}
+              </button>
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSignUp(!isSignUp)}
+                  className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 text-center"
+                >
+                  {isSignUp ? 'Já tem uma conta? Entre aqui' : 'Não tem conta? Cadastre-se'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailLogin(false)}
+                  className="text-xs text-slate-400 hover:text-slate-600 text-center"
+                >
+                  Voltar para login com Google
+                </button>
+              </div>
+            </form>
+          )}
         </motion.div>
       </div>
     );
