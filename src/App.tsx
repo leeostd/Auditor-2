@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User, getRedirectResult } from 'firebase/auth';
+import { onAuthStateChanged, User, getRedirectResult, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
 import { auth, db, signInWithGoogle, signInWithGoogleRedirect, logout } from './lib/firebase';
 import { UserProfile, UserRole } from './types';
@@ -91,6 +91,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [showEmailLogin, setShowEmailLogin] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
