@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { logActivity } from '../lib/logger';
 import { Receiver, UserProfile } from '../types';
 import { Plus, Trash2, Building2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -33,6 +34,11 @@ export function ReceiverManagement({ profile }: ReceiverManagementProps) {
         createdAt: new Date().toISOString(),
         createdBy: profile?.uid
       });
+      logActivity(
+        profile?.uid || 'unknown',
+        'RECEIVER_ADD',
+        `Recebedor autorizado ${newName.trim()} adicionado.`
+      );
       setNewName('');
       toast.success('Recebedor autorizado adicionado.');
     } catch (error) {
@@ -46,6 +52,11 @@ export function ReceiverManagement({ profile }: ReceiverManagementProps) {
     if (!confirm('Tem certeza que deseja remover este recebedor?')) return;
     try {
       await deleteDoc(doc(db, 'receivers', id));
+      logActivity(
+        profile?.uid || 'unknown',
+        'RECEIVER_REMOVE',
+        `Recebedor ID ${id} removido.`
+      );
       toast.success('Recebedor removido.');
     } catch (error) {
       toast.error('Erro ao remover recebedor.');
@@ -55,15 +66,15 @@ export function ReceiverManagement({ profile }: ReceiverManagementProps) {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <header>
-        <h1 className="text-xl font-bold text-slate-900">Recebedores Autorizados</h1>
-        <p className="text-xs text-slate-500">Gerencie os nomes que são permitidos nos comprovantes.</p>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Recebedores Autorizados</h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Gerencie os nomes que são permitidos nos comprovantes.</p>
       </header>
 
       <form onSubmit={handleAdd} className="flex gap-3">
         <input 
           type="text" 
           placeholder="Nome do recebedor (ex: Minha Empresa LTDA)"
-          className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 shadow-sm text-sm"
+          className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 shadow-sm text-sm dark:text-white"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           disabled={isAdding}
@@ -71,7 +82,7 @@ export function ReceiverManagement({ profile }: ReceiverManagementProps) {
         <button 
           type="submit"
           disabled={isAdding}
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-100 transition-all flex items-center gap-2 disabled:opacity-50"
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-100 dark:shadow-none transition-all flex items-center gap-2 disabled:opacity-50"
         >
           {isAdding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
           Adicionar
@@ -80,23 +91,23 @@ export function ReceiverManagement({ profile }: ReceiverManagementProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {receivers.map((receiver) => (
-          <div key={receiver.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+          <div key={receiver.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-lg flex items-center justify-center">
                 <Building2 className="w-5 h-5" />
               </div>
-              <span className="font-bold text-slate-900 text-sm">{receiver.name}</span>
+              <span className="font-bold text-slate-900 dark:text-white text-sm">{receiver.name}</span>
             </div>
             <button 
               onClick={() => receiver.id && handleDelete(receiver.id)}
-              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+              className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-all"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         ))}
         {receivers.length === 0 && (
-          <div className="col-span-full py-10 text-center text-xs text-slate-500 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+          <div className="col-span-full py-10 text-center text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
             Nenhum recebedor cadastrado.
           </div>
         )}

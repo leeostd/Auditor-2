@@ -30,6 +30,8 @@ export interface Receipt {
   employeeName: string;
   createdAt: string;
   imageUrl?: string;
+  isVisualFraud?: boolean;
+  fraudAnalysis?: string;
 }
 
 export interface Employee {

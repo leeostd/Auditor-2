@@ -2,11 +2,19 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { collection, addDoc, query, getDocs, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { logActivity } from '../lib/logger';
 import { extractReceiptData } from '../services/geminiService';
 import { UserProfile, Receipt, Receiver, ReceiptStatus, Employee } from '../types';
 import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const statusLabels: Record<string, string> = {
+  Valid: "Válido",
+  Fraud: "Fraude",
+  Incomplete: "Incompleto",
+  Divergent: "Divergente",
+};
 
 interface ReceiptUploadProps {
   profile: UserProfile | null;
@@ -68,38 +76,27 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
         status = 'Incomplete';
       }
 
-      // 2. Check for duplicate
+      // 2. Check for visual fraud (Gemini Forensics)
+      if (extracted.isVisualFraud) {
+        status = 'Fraud';
+      }
+
+      // 3. Check for duplicate
       const receiptsRef = collection(db, 'receipts');
       let duplicateQuery;
 
-      if (extracted.type === 'pix' && extracted.transactionId) {
+      if (extracted.type === 'pix' && extracted.transactionId && extracted.transactionId !== 'N/A') {
         duplicateQuery = query(receiptsRef, where('transactionId', '==', extracted.transactionId));
-      } else if (extracted.type === 'lottery') {
-        // For lottery, check combination of date, amount and receiver
-        duplicateQuery = query(receiptsRef, 
-          where('type', '==', 'lottery'),
-          where('amount', '==', extracted.amount),
-          where('date', '==', extracted.date),
-          where('receiverName', '==', extracted.receiverName)
-        );
-      } else if (extracted.type === 'credit_card') {
-        // For credit card, use transactionId (auth code) or combination
-        duplicateQuery = query(receiptsRef, 
-          where('type', '==', 'credit_card'),
-          where('transactionId', '==', extracted.transactionId),
-          where('amount', '==', extracted.amount),
-          where('date', '==', extracted.date)
-        );
       }
 
-      if (duplicateQuery) {
+      if (duplicateQuery && status === 'Valid') {
         const duplicateSnap = await getDocs(duplicateQuery);
         if (!duplicateSnap.empty) {
           status = 'Fraud';
         }
       }
 
-      // 3. Check for receiver divergence
+      // 4. Check for receiver divergence
       if (status === 'Valid' && authorizedReceivers.length > 0) {
         const isAuthorized = authorizedReceivers.some(r => 
           extracted.receiverName.toLowerCase().includes(r) || 
@@ -121,6 +118,8 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
         location: extracted.location || '',
         cnpj: extracted.cnpj || '',
         status,
+        isVisualFraud: extracted.isVisualFraud,
+        fraudAnalysis: extracted.fraudAnalysis,
         uploadedBy: profile?.uid || '',
         uploaderName: profile?.displayName || 'Desconhecido',
         employeeId: selectedEmployeeId,
@@ -133,12 +132,11 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       const docRef = await addDoc(collection(db, 'receipts'), newReceipt);
       
       // Log activity
-      await addDoc(collection(db, 'activity_logs'), {
-        userId: profile?.uid,
-        action: 'RECEIPT_AUDITED',
-        details: `Comprovante ${extracted.transactionId} auditado como ${status}. Recebido por: ${selectedEmployee?.name}`,
-        timestamp: new Date().toISOString()
-      });
+      logActivity(
+        profile?.uid || 'unknown',
+        'UPLOAD',
+        `Comprovante ${extracted.transactionId} auditado como ${statusLabels[status] || status}. Recebido por: ${selectedEmployee?.name}`
+      );
 
       setResult({ ...newReceipt, id: docRef.id });
       toast.success('Comprovante processado com sucesso!');
@@ -160,16 +158,16 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <header className="text-center">
-        <h1 className="text-xl font-bold text-slate-900">Auditoria de Comprovante</h1>
-        <p className="text-xs text-slate-500 mt-1">Selecione o funcionário e envie o comprovante.</p>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Auditoria de Comprovante</h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Selecione o funcionário e envie o comprovante.</p>
       </header>
 
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-3">
-        <label className="block text-xs font-bold text-slate-700">Quem recebeu este pagamento?</label>
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 space-y-3">
+        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Quem recebeu este pagamento?</label>
         <div className="relative">
           <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <select 
-            className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-blue-500 appearance-none font-medium text-slate-900 text-sm"
+            className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500 appearance-none font-medium text-slate-900 dark:text-white text-sm"
             value={selectedEmployeeId}
             onChange={(e) => setSelectedEmployeeId(e.target.value)}
             disabled={isProcessing}
@@ -181,7 +179,7 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
           </select>
         </div>
         {!selectedEmployeeId && (
-          <p className="text-amber-600 text-sm flex items-center gap-2">
+          <p className="text-amber-600 dark:text-amber-400 text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4" />
             Você precisa selecionar um funcionário antes de fazer o upload.
           </p>
@@ -192,20 +190,20 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
         {...getRootProps()} 
         className={`
           relative border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer
-          ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-400'}
+          ${isDragActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500'}
           ${(isProcessing || !selectedEmployeeId) ? 'opacity-50 cursor-not-allowed' : ''}
         `}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center gap-3">
-          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+          <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center">
             {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
           </div>
           <div>
-            <p className="text-base font-bold text-slate-900">
+            <p className="text-base font-bold text-slate-900 dark:text-white">
               {isProcessing ? 'Processando com IA...' : 'Arraste ou clique para enviar'}
             </p>
-            <p className="text-xs text-slate-500">Suporta imagens (PNG, JPG) e PDF</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Suporta imagens (PNG, JPG) e PDF</p>
           </div>
         </div>
       </div>
@@ -215,16 +213,23 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden"
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden"
           >
             <div className={`p-4 flex items-center justify-between ${
-              result.status === 'Valid' ? 'bg-emerald-50 text-emerald-700' :
-              result.status === 'Fraud' ? 'bg-red-50 text-red-700' :
-              'bg-amber-50 text-amber-700'
+              result.status === 'Valid' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' :
+              result.status === 'Fraud' ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
+              'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
             }`}>
               <div className="flex items-center gap-2">
                 {result.status === 'Valid' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-                <span className="font-bold text-base">Resultado: {result.status}</span>
+                <span className="font-bold text-base">
+                  Resultado: {
+                    result.status === 'Valid' ? 'Válido' :
+                    result.status === 'Fraud' ? 'Fraude' :
+                    result.status === 'Divergent' ? 'Divergente' :
+                    'Incompleto'
+                  }
+                </span>
               </div>
               <button onClick={() => setResult(null)} className="hover:opacity-70"><X className="w-5 h-5" /></button>
             </div>
@@ -250,6 +255,15 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
                 {result.location && <DataRow label="Localidade" value={result.location} />}
                 {result.cnpj && <DataRow label="CNPJ" value={result.cnpj} />}
               </div>
+              {result.fraudAnalysis && (
+                <div className="col-span-full mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-900/30">
+                  <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase mb-1 flex items-center gap-2">
+                    <AlertCircle className="w-3 h-3" />
+                    Análise de Fraude (IA)
+                  </p>
+                  <p className="text-sm text-red-800 dark:text-red-300 italic">"{result.fraudAnalysis}"</p>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -261,8 +275,8 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
 function DataRow({ label, value }: { label: string, value: string }) {
   return (
     <div>
-      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-      <p className="text-slate-900 font-medium">{value}</p>
+      <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{label}</p>
+      <p className="text-slate-900 dark:text-white font-medium">{value}</p>
     </div>
   );
 }
