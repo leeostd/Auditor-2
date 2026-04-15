@@ -26,8 +26,16 @@ export default function App() {
 
   useEffect(() => {
     // Handle redirect result for mobile logins
-    getRedirectResult(auth).catch((error) => {
+    getRedirectResult(auth).then(async (result) => {
+      if (result?.user) {
+        console.log('Login por redirecionamento bem-sucedido');
+        toast.success('Bem-vindo de volta!');
+      }
+    }).catch((error) => {
       console.error('Redirect login error:', error);
+      if (error.code !== 'auth/cancelled-popup-request') {
+        toast.error(`Erro no redirecionamento: ${error.code}`);
+      }
     });
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -69,15 +77,11 @@ export default function App() {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     
-    // Safety timeout to unlock button if login hangs
-    const timeoutId = setTimeout(() => {
-      setIsLoggingIn(false);
-    }, 15000);
-
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       
       if (isMobile) {
+        // Força redirecionamento no mobile para evitar fechamento de popup
         await signInWithGoogleRedirect();
       } else {
         const result = await signInWithGoogle();
@@ -86,18 +90,15 @@ export default function App() {
         }
       }
     } catch (error: any) {
-      clearTimeout(timeoutId);
       console.error('Login error:', error);
       const errorCode = error.code || 'unknown';
       
       if (errorCode === 'auth/popup-blocked') {
-        toast.error('O bloqueador de popups impediu o login. Por favor, habilite popups.');
+        toast.error('O navegador bloqueou a janela. Por favor, use o Chrome ou habilite popups.');
       } else if (errorCode === 'auth/unauthorized-domain') {
-        toast.error(`Domínio não autorizado: ${window.location.hostname}. Adicione este domínio no Console do Firebase.`);
-      } else if (errorCode === 'auth/cancelled-popup-request') {
-        // User closed the popup
+        toast.error(`Domínio não autorizado no Firebase: ${window.location.hostname}`);
       } else {
-        toast.error(`Erro (${errorCode}): ${error.message}`);
+        toast.error(`Erro técnico: ${errorCode}. Verifique o console.`);
       }
       setIsLoggingIn(false);
     }
