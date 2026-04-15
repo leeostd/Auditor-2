@@ -142,11 +142,15 @@ export default function App() {
     } catch (error: any) {
       console.error('Login error:', error);
       const errorCode = error.code || 'unknown';
-      if (errorCode === 'auth/popup-blocked') {
-        toast.error('O navegador bloqueou a janela. Use o login por e-mail abaixo ou habilite popups.');
+      if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
+        toast.error('O login do Google foi bloqueado ou fechado. Use a opção de e-mail abaixo.');
+        setShowEmailLogin(true);
+      } else if (errorCode === 'auth/unauthorized-domain') {
+        toast.error(`Domínio não autorizado. Use o login por e-mail.`);
         setShowEmailLogin(true);
       } else {
-        toast.error(`Erro técnico: ${errorCode}`);
+        toast.error(`Erro técnico: ${errorCode}. Tente o login por e-mail.`);
+        setShowEmailLogin(true);
       }
       setIsLoggingIn(false);
     }
