@@ -23,6 +23,40 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showAdminSetup, setShowAdminSetup] = useState(false);
+  const [adminPin, setAdminPin] = useState('');
+
+  const handleAdminSetup = async () => {
+    if (adminPin !== '1234') {
+      toast.error('PIN de segurança incorreto.');
+      return;
+    }
+    
+    setIsLoggingIn(true);
+    // Usamos um e-mail fixo que já é reconhecido como Admin no código
+    const adminEmail = 'admin@auditor.com';
+    const adminPass = 'admin123';
+    
+    try {
+      try {
+        await signInWithEmailAndPassword(auth, adminEmail, adminPass);
+        toast.success('Login de Administrador realizado!');
+      } catch (e: any) {
+        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+          await createUserWithEmailAndPassword(auth, adminEmail, adminPass);
+          toast.success('Conta Administradora criada com sucesso!');
+        } else {
+          throw e;
+        }
+      }
+    } catch (error: any) {
+      console.error('Admin setup error:', error);
+      toast.error(`Erro: ${error.message}`);
+    } finally {
+      setIsLoggingIn(false);
+      setShowAdminSetup(false);
+    }
+  };
 
   useEffect(() => {
     // Handle redirect result for mobile logins
@@ -117,6 +151,8 @@ export default function App() {
         toast.error('Este e-mail já está em uso.');
       } else if (errorCode === 'auth/weak-password') {
         toast.error('A senha deve ter pelo menos 6 caracteres.');
+      } else if (errorCode === 'auth/operation-not-allowed') {
+        toast.error('Login por E-mail não está ativado no Console do Firebase (Authentication > Sign-in method).');
       } else {
         toast.error(`Erro: ${errorCode}`);
       }
@@ -253,8 +289,51 @@ export default function App() {
                 >
                   Voltar para login com Google
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminSetup(true)}
+                  className="text-xs text-slate-400 hover:text-red-400 text-center mt-4 border-t border-slate-100 dark:border-slate-800 pt-4"
+                >
+                  Acesso de Emergência (Admin)
+                </button>
               </div>
             </form>
+          )}
+
+          {showAdminSetup && (
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-white dark:bg-slate-900 p-8 rounded-3xl max-w-sm w-full shadow-2xl border border-slate-100 dark:border-slate-800"
+              >
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 text-center">Configurar Administrador</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 text-center">Insira o PIN de segurança para gerar sua conta mestre.</p>
+                <input 
+                  type="password"
+                  maxLength={4}
+                  value={adminPin}
+                  onChange={(e) => setAdminPin(e.target.value)}
+                  className="w-full text-center text-2xl tracking-[1em] py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none mb-6"
+                  placeholder="0000"
+                />
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowAdminSetup(false)}
+                    className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleAdminSetup}
+                    disabled={isLoggingIn}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200 dark:shadow-none"
+                  >
+                    {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Confirmar'}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           )}
         </motion.div>
       </div>
