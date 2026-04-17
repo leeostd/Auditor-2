@@ -16,6 +16,7 @@ import {
   FileType,
   UserCheck,
   User,
+  Users,
   Clock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -33,7 +34,7 @@ export function Dashboard({ profile }: DashboardProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'receipts'));
+    const q = query(collection(db, 'receipts'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Receipt));
       setReceipts(data);
@@ -194,9 +195,9 @@ export function Dashboard({ profile }: DashboardProps) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Comprovante / Equipe</th>
+                <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cliente / Origem</th>
                 <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tipo / Info</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data/Hora</th>
+                <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data/Upload</th>
                 <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Valor</th>
                 <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Ações</th>
@@ -211,14 +212,23 @@ export function Dashboard({ profile }: DashboardProps) {
                         <div 
                           className={cn(
                             "w-12 h-12 rounded-lg overflow-hidden border cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all flex-shrink-0 relative",
-                            receipt.isVisualFraud ? "border-red-500 ring-red-200" : "border-slate-200 dark:border-slate-700"
+                            receipt.isVisualFraud && receipt.status !== 'Valid' ? "border-red-500 ring-red-200" : 
+                            receipt.isVisualFraud && receipt.status === 'Valid' ? "border-emerald-500" :
+                            "border-slate-200 dark:border-slate-700"
                           )}
                           onClick={() => setViewingReceipt(receipt)}
                         >
                           <img src={receipt.imageUrl} className="w-full h-full object-cover" alt="Thumbnail" />
                           {receipt.isVisualFraud && (
-                            <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
-                              <AlertTriangle className="w-5 h-5 text-red-600 drop-shadow-sm" />
+                            <div className={cn(
+                              "absolute inset-0 flex items-center justify-center",
+                              receipt.status === 'Valid' ? "bg-emerald-500/20" : "bg-red-500/20"
+                            )}>
+                              {receipt.status === 'Valid' ? (
+                                <CheckCircle2 className="w-5 h-5 text-emerald-600 drop-shadow-sm" />
+                              ) : (
+                                <AlertTriangle className="w-5 h-5 text-red-600 drop-shadow-sm" />
+                              )}
                             </div>
                           )}
                         </div>
@@ -230,11 +240,11 @@ export function Dashboard({ profile }: DashboardProps) {
                       <div className="flex flex-col gap-0.5 min-w-0">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
                           <UserCheck className="w-3 h-3 text-blue-500" />
-                          <span className="truncate">{receipt.employeeName}</span>
+                          <span className="truncate">{receipt.payerName}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                          <User className="w-3 h-3" />
-                          <span className="truncate">Auditor: {receipt.uploaderName}</span>
+                          <Users className="w-3 h-3 text-slate-400" />
+                          <span className="truncate">Equipe: {receipt.employeeName}</span>
                         </div>
                       </div>
                     </div>
@@ -255,8 +265,21 @@ export function Dashboard({ profile }: DashboardProps) {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">{format(new Date(receipt.createdAt), 'dd/MM/yyyy', { locale: ptBR })}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{format(new Date(receipt.createdAt), 'HH:mm', { locale: ptBR })}</p>
+                    {(() => {
+                      const receiptDate = new Date(receipt.date);
+                      const isValid = !isNaN(receiptDate.getTime());
+                      return (
+                        <div className="flex flex-col">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {isValid ? format(receiptDate, 'dd/MM/yyyy', { locale: ptBR }) : receipt.date}
+                          </p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            Upload: {format(new Date(receipt.createdAt), 'HH:mm')}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">
                     R$ {receipt.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -424,7 +447,13 @@ export function Dashboard({ profile }: DashboardProps) {
                 <div className="p-6 space-y-6">
                   <div className="grid grid-cols-2 gap-4">
                     <ViewData label="Valor" value={`R$ ${viewingReceipt.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} highlight />
-                    <ViewData label="Data" value={viewingReceipt.date} />
+                    <ViewData 
+                      label="Data do Comprovante" 
+                      value={(() => {
+                        const d = new Date(viewingReceipt.date);
+                        return !isNaN(d.getTime()) ? format(d, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : viewingReceipt.date;
+                      })()} 
+                    />
                     <ViewData label="ID Transação" value={viewingReceipt.transactionId} />
                     <ViewData label="Banco" value={viewingReceipt.bank} />
                   </div>
@@ -435,12 +464,27 @@ export function Dashboard({ profile }: DashboardProps) {
                   </div>
 
                   {viewingReceipt.fraudAnalysis && (
-                    <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
-                      <p className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" />
-                        Análise de Risco
+                    <div className={cn(
+                      "p-4 rounded-2xl border transition-colors",
+                      viewingReceipt.status === 'Valid' ? "bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/20" :
+                      viewingReceipt.status === 'Fraud' ? "bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/20" :
+                      "bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20"
+                    )}>
+                      <p className={cn(
+                        "text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-1",
+                        viewingReceipt.status === 'Valid' ? "text-blue-600 dark:text-blue-400" :
+                        viewingReceipt.status === 'Fraud' ? "text-red-600 dark:text-red-400" :
+                        "text-amber-600 dark:text-amber-400"
+                      )}>
+                        {viewingReceipt.status === 'Valid' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                        Análise de Auditoria
                       </p>
-                      <p className="text-xs text-red-800 dark:text-red-300 leading-relaxed italic">
+                      <p className={cn(
+                        "text-xs leading-relaxed italic",
+                        viewingReceipt.status === 'Valid' ? "text-blue-800 dark:text-blue-300" :
+                        viewingReceipt.status === 'Fraud' ? "text-red-800 dark:text-red-300" :
+                        "text-amber-800 dark:text-amber-300"
+                      )}>
                         "{viewingReceipt.fraudAnalysis}"
                       </p>
                     </div>

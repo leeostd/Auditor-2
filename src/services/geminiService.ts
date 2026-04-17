@@ -19,28 +19,38 @@ export interface ExtractedReceiptData {
 export async function extractReceiptData(base64Image: string, mimeType: string): Promise<ExtractedReceiptData> {
   const model = "gemini-3-flash-preview";
   
-  const prompt = `Analise este documento com foco extremo em detecção de fraudes e extração de dados. 
-  Ele pode ser um comprovante de PIX, depósito em lotérica ou cartão de crédito.
+  // Current date in Brazil (America/Sao_Paulo) for reference
+  const now = new Date();
+  const brDate = new Intl.DateTimeFormat('pt-BR', { 
+    dateStyle: 'full', 
+    timeStyle: 'long', 
+    timeZone: 'America/Sao_Paulo' 
+  }).format(now);
+
+  const prompt = `Analise este documento com foco em PERÍCIA FORENSE e extração de dados. 
   
-  IDENTIFICAÇÃO DE FRAUDE VISUAL (FORENSE):
-  1. Verifique inconsistências de fontes (tamanhos, pesos ou estilos diferentes no mesmo campo).
-  2. Procure por pixelização excessiva ou "borrões" ao redor de números e nomes (sinal de edição/montagem).
-  3. Verifique o alinhamento dos textos. Textos levemente desalinhados ou sobrepostos são sinais de fraude.
-  4. Analise se as cores do texto são uniformes. Tons de preto/cinza diferentes no mesmo documento indicam alteração.
+  DIRETRIZES DE FRAUDE (PRIORIDADE MÁXIMA):
+  1. FOCO EM ADULTERAÇÃO: Procure sinais de montagem, como fontes diferentes no mesmo campo, desalinhamento, pixelização suspeita ao redor de valores/nomes ou fundos que não batem com a textura do papel/tela.
+  2. DUPLICAÇÃO: Verifique se o ID da transação parece genérico ou gerado.
+  3. TOLERÂNCIA: Ignore variações irrelevantes como letras minúsculas em IDs (ex: e2e... vs E2E...) ou sequências de números que não são datas. 
+  4. RELATIVIDADE TEMPORAL: Use a referência abaixo. Se for anterior ou igual a hoje, é histórico válido.
+  
+  REFERÊNCIA TEMPORAL:
+  - Data/Hora de hoje (Brasília): ${brDate}
   
   EXTRAÇÃO DE DADOS:
   1. Tipo: 'pix', 'lottery' ou 'credit_card'.
   2. ID da transação (Código E2E para PIX, Controle para Lotérica, Autorização para Cartão).
   3. Valor total (Número decimal).
-  4. Data e hora (ISO YYYY-MM-DDTHH:mm:ssZ).
+  4. Data e hora (ISO YYYY-MM-DDTHH:mm:ssZ). SE A DATA NÃO TIVER ANO, ASSUMA O ANO DA REFERÊNCIA TEMPORAL.
   5. Nome do pagador/cliente.
   6. Nome do recebedor/estabelecimento.
   7. Banco/Instituição.
   8. Localidade/CNPJ.
-
-  RETORNO DE SEGURANÇA:
-  - No campo 'fraudAnalysis', descreva detalhadamente qualquer anomalia visual encontrada.
-  - No campo 'isVisualFraud', defina como true se houver sinais claros de edição.`;
+  
+  RETORNO:
+  - 'isVisualFraud': true APENAS se houver sinais claros de EDIÇÃO DE IMAGEM (montagem). 
+  - 'fraudAnalysis': Explicação breve do motivo. Se for válido, use "Comprovante íntegro".`;
 
   const response = await ai.models.generateContent({
     model,
