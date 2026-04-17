@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, where, Timestamp, updateDoc, doc, orderBy, limit } from 'firebase/firestore';
+import { collection, query, onSnapshot, where, Timestamp, updateDoc, deleteDoc, doc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { logActivity } from '../lib/logger';
 import { Receipt, UserProfile, ReceiptStatus } from '../types';
@@ -11,7 +11,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Eye,
+  Trash2,
   X,
+  FileType,
   UserCheck,
   User,
   Clock
@@ -97,7 +99,31 @@ export function Dashboard({ profile }: DashboardProps) {
     Divergent: "Divergente",
   };
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, transactionId: string } | null>(null);
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm || !profile) return;
+    
+    try {
+      await deleteDoc(doc(db, 'receipts', deleteConfirm.id));
+      logActivity(
+        profile.uid,
+        'RECEIPT_DELETE',
+        `Comprovante ${deleteConfirm.transactionId} excluído pelo administrador.`
+      );
+      toast.success('Comprovante removido com sucesso.');
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao excluir comprovante.');
+    }
+  };
+
+  const handleDeleteReceipt = (id: string, transactionId: string) => {
+    if (!id || profile?.role !== 'admin') return;
+    setDeleteConfirm({ id, transactionId });
+  };
 
   const handleStatusChange = async (receiptId: string, newStatus: ReceiptStatus, oldStatus: string, transactionId: string) => {
     if (profile?.role !== 'admin') {
@@ -187,7 +213,7 @@ export function Dashboard({ profile }: DashboardProps) {
                             "w-12 h-12 rounded-lg overflow-hidden border cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all flex-shrink-0 relative",
                             receipt.isVisualFraud ? "border-red-500 ring-red-200" : "border-slate-200 dark:border-slate-700"
                           )}
-                          onClick={() => setSelectedImage(receipt.imageUrl || null)}
+                          onClick={() => setViewingReceipt(receipt)}
                         >
                           <img src={receipt.imageUrl} className="w-full h-full object-cover" alt="Thumbnail" />
                           {receipt.isVisualFraud && (
@@ -260,12 +286,31 @@ export function Dashboard({ profile }: DashboardProps) {
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button 
-                      onClick={() => receipt.imageUrl && setSelectedImage(receipt.imageUrl)}
-                      className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                    >
-                      <Eye className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1 relative z-10">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingReceipt(receipt);
+                        }}
+                        className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-95 cursor-pointer"
+                        title="Ver Comprovante e Análise"
+                      >
+                        <Eye className="w-5 h-5" />
+                      </button>
+                      
+                      {profile?.role === 'admin' && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            receipt.id && handleDeleteReceipt(receipt.id, receipt.transactionId);
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-all active:scale-95 cursor-pointer"
+                          title="Excluir Registro"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -280,33 +325,159 @@ export function Dashboard({ profile }: DashboardProps) {
       </div>
 
       {/* Image Modal */}
+      {/* Delete Confirmation Modal */}
       <AnimatePresence>
-        {selectedImage && (
+        {deleteConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm border border-slate-100 dark:border-slate-800 shadow-2xl space-y-4"
+            >
+              <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Excluir Comprovante?</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                  Deseja realmente excluir o registro <span className="font-bold text-slate-700 dark:text-slate-200">#{deleteConfirm.transactionId}</span>?
+                </p>
+                <p className="text-xs text-red-500 dark:text-red-400 mt-1 font-medium">Esta ação não pode ser desfeita.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl transition-all shadow-lg shadow-red-200 dark:shadow-none"
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {viewingReceipt && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 md:p-10"
-            onClick={() => setSelectedImage(null)}
+            className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 md:p-10"
+            onClick={() => setViewingReceipt(null)}
           >
             <button 
-              className="absolute top-6 right-6 p-2 text-white hover:bg-white/10 rounded-full transition-colors"
-              onClick={() => setSelectedImage(null)}
+              className="absolute top-6 right-6 p-2 text-white hover:bg-white/10 rounded-full transition-colors z-[110]"
+              onClick={() => setViewingReceipt(null)}
             >
               <X className="w-8 h-8" />
             </button>
-            <motion.img 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              src={selectedImage} 
-              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-              alt="Comprovante Full"
+            
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 rounded-[2.5rem] overflow-hidden w-full max-w-6xl max-h-[90vh] flex flex-col md:flex-row shadow-2xl border border-white/10"
               onClick={(e) => e.stopPropagation()}
-            />
+            >
+              {/* Image Section */}
+              <div className="flex-1 bg-slate-100 dark:bg-slate-800 flex items-center justify-center p-6 min-h-[300px] border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800">
+                {viewingReceipt.imageUrl ? (
+                  <img 
+                    src={viewingReceipt.imageUrl} 
+                    className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg"
+                    alt="Comprovante"
+                  />
+                ) : (
+                  <div className="text-slate-400 flex flex-col items-center gap-2">
+                    <FileType className="w-12 h-12" />
+                    <p>Sem imagem disponível</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Data Section */}
+              <div className="w-full md:w-[400px] flex flex-col bg-white dark:bg-slate-900 overflow-y-auto">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+                      statusColors[viewingReceipt.status]
+                    )}>
+                      {statusLabels[viewingReceipt.status] || viewingReceipt.status}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      {viewingReceipt.type === 'pix' ? 'PIX' : viewingReceipt.type === 'lottery' ? 'Lotérica' : 'Cartão'}
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Detalhes da Auditoria</h2>
+                  <p className="text-xs text-slate-500 font-medium">Extraído por Gemini 3 Flash</p>
+                </div>
+
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <ViewData label="Valor" value={`R$ ${viewingReceipt.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} highlight />
+                    <ViewData label="Data" value={viewingReceipt.date} />
+                    <ViewData label="ID Transação" value={viewingReceipt.transactionId} />
+                    <ViewData label="Banco" value={viewingReceipt.bank} />
+                  </div>
+
+                  <div className="space-y-4">
+                    <ViewData label="Pagador" value={viewingReceipt.payerName} />
+                    <ViewData label="Recebedor" value={viewingReceipt.receiverName} />
+                  </div>
+
+                  {viewingReceipt.fraudAnalysis && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
+                      <p className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Análise de Risco
+                      </p>
+                      <p className="text-xs text-red-800 dark:text-red-300 leading-relaxed italic">
+                        "{viewingReceipt.fraudAnalysis}"
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Histórico de Upload</p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 text-xs font-bold">
+                        {viewingReceipt.uploaderName?.[0] || 'U'}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">{viewingReceipt.uploaderName}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {new Date(viewingReceipt.createdAt).toLocaleString('pt-BR')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function ViewData({ label, value, highlight }: { label: string, value: string, highlight?: boolean }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-0.5">{label}</p>
+      <p className={cn(
+        "text-sm font-medium",
+        highlight ? "text-blue-600 dark:text-blue-400 font-bold" : "text-slate-900 dark:text-white"
+      )}>{value}</p>
     </div>
   );
 }

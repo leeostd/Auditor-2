@@ -5,7 +5,7 @@ import { db } from '../lib/firebase';
 import { logActivity } from '../lib/logger';
 import { extractReceiptData } from '../services/geminiService';
 import { UserProfile, Receipt, Receiver, ReceiptStatus, Employee } from '../types';
-import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User } from 'lucide-react';
+import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -23,24 +23,72 @@ interface ReceiptUploadProps {
 export function ReceiptUpload({ profile }: ReceiptUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<Receipt | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<Receipt>>({});
   const [authorizedReceivers, setAuthorizedReceivers] = useState<string[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
 
   useEffect(() => {
     const fetchReceivers = async () => {
-      const q = query(collection(db, 'receivers'));
-      const snapshot = await getDocs(q);
-      setAuthorizedReceivers(snapshot.docs.map(doc => doc.data().name.toLowerCase()));
+      try {
+        const q = query(collection(db, 'receivers'));
+        const snapshot = await getDocs(q);
+        setAuthorizedReceivers(snapshot.docs.map(doc => doc.data().name.toLowerCase()));
+      } catch (err) {
+        console.error("Error fetching receivers:", err);
+      }
     };
     fetchReceivers();
 
     const unsubscribeEmployees = onSnapshot(collection(db, 'employees'), (snapshot) => {
       setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+    }, (error) => {
+      console.error("Employee snapshot error:", error);
     });
 
     return () => unsubscribeEmployees();
   }, []);
+
+  const handleSave = async () => {
+    if (!editForm || !profile) return;
+    
+    setIsProcessing(true);
+    try {
+      const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
+      
+      // Final validation with edited data
+      let status: ReceiptStatus = 'Valid';
+      if (editForm.isVisualFraud) status = 'Fraud';
+      
+      const finalReceipt: Receipt = {
+        ...editForm as Receipt,
+        status,
+        uploadedBy: profile.uid,
+        uploaderName: profile.displayName,
+        employeeId: selectedEmployeeId,
+        employeeName: selectedEmployee?.name || 'Desconhecido',
+        createdAt: new Date().toISOString(),
+      };
+
+      const docRef = await addDoc(collection(db, 'receipts'), finalReceipt);
+      
+      logActivity(
+        profile.uid,
+        'UPLOAD_CONFIRMED',
+        `Comprovante ${finalReceipt.transactionId} salvo manualmente após conferência.`
+      );
+
+      setResult({ ...finalReceipt, id: docRef.id });
+      setIsEditing(false);
+      toast.success('Comprovante salvo com sucesso!');
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao salvar no banco de dados.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -53,10 +101,7 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
     setIsProcessing(true);
     setResult(null);
 
-    const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
-
     try {
-      // Convert to base64
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve) => {
         reader.onload = () => resolve(reader.result as string);
@@ -64,50 +109,10 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       });
       const base64 = await base64Promise;
 
-      // Extract with Gemini
       const extracted = await extractReceiptData(base64, file.type);
       
-      // Validation Logic
-      let status: ReceiptStatus = 'Valid';
-      
-      // 1. Check for incomplete data
-      // For PIX, transactionId is required. For Lottery, it might be a control number.
-      if (!extracted.amount || isNaN(extracted.amount) || !extracted.date || !extracted.receiverName) {
-        status = 'Incomplete';
-      }
-
-      // 2. Check for visual fraud (Gemini Forensics)
-      if (extracted.isVisualFraud) {
-        status = 'Fraud';
-      }
-
-      // 3. Check for duplicate
-      const receiptsRef = collection(db, 'receipts');
-      let duplicateQuery;
-
-      if (extracted.type === 'pix' && extracted.transactionId && extracted.transactionId !== 'N/A') {
-        duplicateQuery = query(receiptsRef, where('transactionId', '==', extracted.transactionId));
-      }
-
-      if (duplicateQuery && status === 'Valid') {
-        const duplicateSnap = await getDocs(duplicateQuery);
-        if (!duplicateSnap.empty) {
-          status = 'Fraud';
-        }
-      }
-
-      // 4. Check for receiver divergence
-      if (status === 'Valid' && authorizedReceivers.length > 0) {
-        const isAuthorized = authorizedReceivers.some(r => 
-          extracted.receiverName.toLowerCase().includes(r) || 
-          r.includes(extracted.receiverName.toLowerCase())
-        );
-        if (!isAuthorized) {
-          status = 'Divergent';
-        }
-      }
-
-      const newReceipt: Receipt = {
+      // Map extracted data to edit form instead of saving immediately
+      setEditForm({
         type: extracted.type,
         transactionId: extracted.transactionId || 'N/A',
         amount: extracted.amount || 0,
@@ -117,36 +122,19 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
         bank: extracted.bank || 'N/A',
         location: extracted.location || '',
         cnpj: extracted.cnpj || '',
-        status,
         isVisualFraud: extracted.isVisualFraud,
         fraudAnalysis: extracted.fraudAnalysis,
-        uploadedBy: profile?.uid || '',
-        uploaderName: profile?.displayName || 'Desconhecido',
-        employeeId: selectedEmployeeId,
-        employeeName: selectedEmployee?.name || 'Desconhecido',
-        createdAt: new Date().toISOString(),
         imageUrl: base64,
-      };
-
-      // Save to Firestore
-      const docRef = await addDoc(collection(db, 'receipts'), newReceipt);
-      
-      // Log activity
-      logActivity(
-        profile?.uid || 'unknown',
-        'UPLOAD',
-        `Comprovante ${extracted.transactionId} auditado como ${statusLabels[status] || status}. Recebido por: ${selectedEmployee?.name}`
-      );
-
-      setResult({ ...newReceipt, id: docRef.id });
-      toast.success('Comprovante processado com sucesso!');
+      });
+      setIsEditing(true);
+      toast.info('IA concluiu a leitura. Por favor, confira os dados abaixo.');
     } catch (error) {
       console.error(error);
       toast.error('Erro ao processar comprovante.');
     } finally {
       setIsProcessing(false);
     }
-  }, [profile, authorizedReceivers, selectedEmployeeId, employees]);
+  }, [profile, selectedEmployeeId, employees]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -164,19 +152,24 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
 
       <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 space-y-3">
         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Quem recebeu este pagamento?</label>
-        <div className="relative">
-          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <div className="relative group">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <select 
-            className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500 appearance-none font-medium text-slate-900 dark:text-white text-sm"
+            className="w-full pl-10 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-transparent rounded-xl focus:ring-2 focus:ring-blue-500 appearance-none font-medium text-slate-900 dark:text-white text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
             value={selectedEmployeeId}
             onChange={(e) => setSelectedEmployeeId(e.target.value)}
             disabled={isProcessing}
           >
             <option value="">Selecione um funcionário...</option>
-            {employees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.name}</option>
-            ))}
+            {employees.length > 0 ? (
+              employees.map(emp => (
+                <option key={emp.id} value={emp.id} className="dark:bg-slate-900">{emp.name}</option>
+              ))
+            ) : (
+              <option disabled>Nenhum funcionário cadastrado</option>
+            )}
           </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within:text-blue-500 transition-colors" />
         </div>
         {!selectedEmployeeId && (
           <p className="text-amber-600 dark:text-amber-400 text-sm flex items-center gap-2">
@@ -209,6 +202,113 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       </div>
 
       <AnimatePresence>
+        {isEditing && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-blue-500 overflow-hidden"
+          >
+            <div className="p-4 bg-blue-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-bold">Conferência dos Dados</span>
+              </div>
+              <p className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full">Ajuste se necessário</p>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tipo</label>
+                  <select 
+                    value={editForm.type}
+                    onChange={(e) => setEditForm({...editForm, type: e.target.value as any})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-medium"
+                  >
+                    <option value="pix">PIX</option>
+                    <option value="lottery">Lotérica</option>
+                    <option value="credit_card">Cartão</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ID / Controle</label>
+                  <input 
+                    type="text"
+                    value={editForm.transactionId}
+                    onChange={(e) => setEditForm({...editForm, transactionId: e.target.value})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Valor (R$)</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={editForm.amount}
+                    onChange={(e) => setEditForm({...editForm, amount: parseFloat(e.target.value)})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-bold text-blue-600"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data Extraída</label>
+                  <input 
+                    type="text"
+                    value={editForm.date}
+                    onChange={(e) => setEditForm({...editForm, date: e.target.value})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-medium"
+                  />
+                  <p className="text-[10px] text-slate-400">A IA leu: {editForm.date}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pagador</label>
+                  <input 
+                    type="text"
+                    value={editForm.payerName}
+                    onChange={(e) => setEditForm({...editForm, payerName: e.target.value})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recebedor</label>
+                  <input 
+                    type="text"
+                    value={editForm.receiverName}
+                    onChange={(e) => setEditForm({...editForm, receiverName: e.target.value})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Banco</label>
+                  <input 
+                    type="text"
+                    value={editForm.bank}
+                    onChange={(e) => setEditForm({...editForm, bank: e.target.value})}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border-none text-sm font-medium"
+                  />
+                </div>
+                <div className="pt-4 flex gap-2">
+                  <button 
+                    onClick={() => setIsEditing(false)}
+                    className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-xl text-xs"
+                  >
+                    Descartar
+                  </button>
+                  <button 
+                    onClick={handleSave}
+                    disabled={isProcessing}
+                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200 dark:shadow-none text-xs flex items-center justify-center gap-2"
+                  >
+                    {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar e Salvar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {result && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}

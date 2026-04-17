@@ -163,7 +163,16 @@ export function UserManagement({ profile }: UserManagementProps) {
             {users.map((u) => (
               <div key={u.uid} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                 <div className="flex items-center gap-3">
-                  <img src={u.photoURL} className="w-10 h-10 rounded-full border border-slate-100 dark:border-slate-800" alt="" />
+                  <div className="relative">
+                    <div className="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center font-bold text-sm border border-purple-100 dark:border-purple-800/30 transition-colors">
+                      {u.displayName.charAt(0).toUpperCase()}
+                    </div>
+                    {u.role === 'admin' && (
+                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm" title="Administrador">
+                        A
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <p className="font-bold text-slate-900 dark:text-white text-sm">{u.displayName}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{u.email}</p>

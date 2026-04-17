@@ -17,7 +17,7 @@ export interface ExtractedReceiptData {
 }
 
 export async function extractReceiptData(base64Image: string, mimeType: string): Promise<ExtractedReceiptData> {
-  const model = "gemini-2.0-flash";
+  const model = "gemini-3-flash-preview";
   
   const prompt = `Analise este documento com foco extremo em detecção de fraudes e extração de dados. 
   Ele pode ser um comprovante de PIX, depósito em lotérica ou cartão de crédito.

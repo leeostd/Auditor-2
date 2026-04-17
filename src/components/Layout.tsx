@@ -76,11 +76,18 @@ export function Layout({ children, profile, activeTab, setActiveTab, onLogout, i
 
         <div className="mt-auto pt-4 border-t border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5 px-2 mb-4">
-            <img 
-              src={profile?.photoURL || `https://ui-avatars.com/api/?name=${profile?.displayName}`} 
-              className="w-8 h-8 rounded-full border border-slate-100 dark:border-slate-800"
-              alt="Profile"
-            />
+            <div className="relative">
+              <img 
+                src={profile?.photoURL || `https://ui-avatars.com/api/?name=${profile?.displayName}`} 
+                className="w-8 h-8 rounded-full border border-slate-100 dark:border-slate-800"
+                alt="Profile"
+              />
+              {profile?.role === 'admin' && (
+                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-blue-600 text-[8px] font-black text-white rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm">
+                  A
+                </div>
+              )}
+            </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{profile?.displayName}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">{profile?.role}</p>
@@ -192,10 +199,16 @@ export function Layout({ children, profile, activeTab, setActiveTab, onLogout, i
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 scroll-smooth">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 scroll-smooth flex flex-col">
+          <div className="max-w-7xl mx-auto flex-1 w-full">
             {children}
           </div>
+          
+          <footer className="mt-8 pb-4 text-center">
+            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-medium tracking-widest uppercase">
+              {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date())} • {new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).format(new Date())} BRT
+            </p>
+          </footer>
         </main>
       </div>
     </div>
