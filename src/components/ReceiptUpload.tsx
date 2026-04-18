@@ -124,14 +124,21 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
       setUploadQueue(prev => prev.map((it, idx) => idx === pendingIndex ? { ...it, progress: 'processing' } : it));
 
       try {
+        if (uploadQueue[pendingIndex].file.size > 15 * 1024 * 1024) {
+          throw new Error("O arquivo é muito grande (máximo 15MB).");
+        }
+
         const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
+        const base64Promise = new Promise<string>((resolve, reject) => {
           reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Erro ao ler o arquivo local."));
           reader.readAsDataURL(uploadQueue[pendingIndex].file);
         });
         const base64 = await base64Promise;
 
+        console.log(`Iniciando extração para: ${uploadQueue[pendingIndex].file.name}`);
         const extracted = await extractReceiptData(base64, uploadQueue[pendingIndex].file.type);
+        console.log("Extração concluída com sucesso.");
         const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
         
         // Validation logic
@@ -160,10 +167,10 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
         } else {
           setUploadQueue(prev => prev.map((it, idx) => idx === pendingIndex ? { ...it, progress: 'done', result: receiptData } : it));
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error(error);
         setUploadQueue(prev => prev.map((it, idx) => idx === pendingIndex ? { ...it, progress: 'error' } : it));
-        toast.error(`Erro ao processar arquivo ${pendingIndex + 1}`);
+        toast.error(`Erro no arquivo ${pendingIndex + 1}: ${error.message || 'Erro desconhecido'}`);
       }
     };
 

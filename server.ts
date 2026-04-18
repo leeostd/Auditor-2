@@ -16,7 +16,8 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json({ limit: '20mb' }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   const apiKey = process.env.GEMINI_API_KEY;
   const genAI = new GoogleGenAI({ apiKey: apiKey || "" });
@@ -38,7 +39,7 @@ async function startServer() {
 
       console.log(`Processando imagem type: ${mimeType}, base64 length: ${base64Image.length}`);
 
-      const model = "gemini-2.0-flash"; // More stable for vision tasks
+      const model = "gemini-3-flash-preview"; 
 
       const result = await genAI.models.generateContent({
         model,
@@ -78,11 +79,25 @@ async function startServer() {
       let rawText = result.text || "";
       console.log("Gemini respondeu. Tamanho da resposta:", rawText.length);
       
-      // Clean markdown if present
-      const jsonMatch = rawText.match(/```json\n([\s\S]*?)\n```/) || rawText.match(/```([\s\S]*?)```/);
-      const cleanJson = jsonMatch ? jsonMatch[1] : rawText;
+      // Clean markdown if present and handle possible extra text
+      let cleanJson = rawText.trim();
+      const jsonMatch = cleanJson.match(/```json\n?([\s\S]*?)\n?```/) || cleanJson.match(/```\n?([\s\S]*?)\n?```/);
+      if (jsonMatch) {
+        cleanJson = jsonMatch[1].trim();
+      }
 
-      res.json(JSON.parse(cleanJson));
+      // Final sanitization: remove any text before or after the main JSON object if parsing fails
+      try {
+        res.json(JSON.parse(cleanJson));
+      } catch (e) {
+        const start = cleanJson.indexOf('{');
+        const end = cleanJson.lastIndexOf('}');
+        if (start !== -1 && end !== -1) {
+          res.json(JSON.parse(cleanJson.substring(start, end + 1)));
+        } else {
+          throw e;
+        }
+      }
     } catch (error: any) {
       console.error("Gemini Error Details:", JSON.stringify(error, null, 2));
       const errorMessage = error.message || "Erro interno ao processar com Gemini";
