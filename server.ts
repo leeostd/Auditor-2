@@ -23,17 +23,22 @@ async function startServer() {
 
   // API Route for Gemini Extraction
   app.post("/api/extract", async (req, res) => {
+    console.log("Recebendo requisição de extração...");
     try {
       if (!apiKey) {
+        console.error("Erro: GEMINI_API_KEY não encontrada no ambiente.");
         return res.status(500).json({ error: "Configuração de IA ausente (GEMINI_API_KEY)" });
       }
 
       const { base64Image, mimeType, prompt } = req.body;
       if (!base64Image || !mimeType) {
+        console.error("Erro: Dados incompletos na requisição.");
         return res.status(400).json({ error: "Imagem e tipo MIME são obrigatórios" });
       }
 
-      const model = "gemini-2.0-flash";
+      console.log(`Processando imagem type: ${mimeType}, base64 length: ${base64Image.length}`);
+
+      const model = "gemini-2.0-flash"; // More stable for vision tasks
 
       const result = await genAI.models.generateContent({
         model,
@@ -70,10 +75,18 @@ async function startServer() {
         },
       });
 
-      res.json(JSON.parse(result.text));
+      let rawText = result.text || "";
+      console.log("Gemini respondeu. Tamanho da resposta:", rawText.length);
+      
+      // Clean markdown if present
+      const jsonMatch = rawText.match(/```json\n([\s\S]*?)\n```/) || rawText.match(/```([\s\S]*?)```/);
+      const cleanJson = jsonMatch ? jsonMatch[1] : rawText;
+
+      res.json(JSON.parse(cleanJson));
     } catch (error: any) {
-      console.error("Gemini Error:", error);
-      res.status(500).json({ error: error.message || "Erro interno ao processar com Gemini" });
+      console.error("Gemini Error Details:", JSON.stringify(error, null, 2));
+      const errorMessage = error.message || "Erro interno ao processar com Gemini";
+      res.status(500).json({ error: errorMessage });
     }
   });
 
