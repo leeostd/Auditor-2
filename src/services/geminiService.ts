@@ -1,3 +1,7 @@
+import { GoogleGenAI, Type } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 export interface ExtractedReceiptData {
   type: 'pix' | 'lottery' | 'credit_card';
   transactionId: string;
@@ -46,22 +50,50 @@ export async function extractReceiptData(base64Image: string, mimeType: string):
   - 'isVisualFraud': true APENAS se houver sinais claros de EDIÇÃO DE IMAGEM (montagem). 
   - 'fraudAnalysis': Explicação breve do motivo. Se for válido, use "Comprovante íntegro".`;
 
-  const response = await fetch('/api/extract', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: {
+      parts: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Image.split(',')[1] || base64Image,
+          },
+        },
+        { text: prompt },
+      ],
     },
-    body: JSON.stringify({
-      base64Image,
-      mimeType,
-      prompt,
-    }),
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          type: { type: Type.STRING, enum: ['pix', 'lottery', 'credit_card'] },
+          transactionId: { type: Type.STRING },
+          amount: { type: Type.NUMBER },
+          date: { type: Type.STRING },
+          payerName: { type: Type.STRING },
+          receiverName: { type: Type.STRING },
+          bank: { type: Type.STRING },
+          location: { type: Type.STRING },
+          cnpj: { type: Type.STRING },
+          isVisualFraud: { type: Type.BOOLEAN, description: "Indica se há sinais visuais de adulteração na imagem" },
+          fraudAnalysis: { type: Type.STRING, description: "Descrição detalhada das anomalias encontradas" },
+        },
+        required: ["type", "transactionId", "amount", "date", "payerName", "receiverName", "bank", "isVisualFraud"],
+      },
+    },
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || "Falha ao processar o comprovante com IA.");
+  try {
+    const rawText = response.text || "";
+    // Clean markdown if present
+    const jsonMatch = rawText.match(/```json\n?([\s\S]*?)\n?```/) || rawText.match(/```\n?([\s\S]*?)\n?```/);
+    const cleanJson = jsonMatch ? jsonMatch[1].trim() : rawText.trim();
+    
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Failed to parse Gemini response:", error);
+    throw new Error("Falha ao processar o comprovante com IA.");
   }
-
-  return response.json();
 }
