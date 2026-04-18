@@ -18,6 +18,15 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+  // Endpoint to provide Gemini key to the frontend at runtime
+  // This is necessary because baking keys at build time (Vite) doesn't work well 
+  // with AI Studio's dynamic secret injection in shared/deployed apps.
+  app.get("/api/config", (req, res) => {
+    res.json({ 
+      geminiApiKey: process.env.GEMINI_API_KEY || "" 
+    });
+  });
+
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });

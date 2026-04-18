@@ -1,6 +1,30 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiInstance: GoogleGenAI | null = null;
+
+async function getAiInstance(): Promise<GoogleGenAI> {
+  if (aiInstance) return aiInstance;
+
+  let apiKey = process.env.GEMINI_API_KEY;
+
+  // If missing in process.env (common in built Vite apps), fetch from our runtime config endpoint
+  if (!apiKey) {
+    try {
+      const resp = await fetch('/api/config');
+      const config = await resp.json();
+      apiKey = config.geminiApiKey;
+    } catch (e) {
+      console.error("Failed to fetch Gemini API key from server:", e);
+    }
+  }
+
+  if (!apiKey) {
+    throw new Error("API key is missing. Please check your AI Studio project secrets.");
+  }
+
+  aiInstance = new GoogleGenAI({ apiKey });
+  return aiInstance;
+}
 
 export interface ExtractedReceiptData {
   type: 'pix' | 'lottery' | 'credit_card';
@@ -17,6 +41,8 @@ export interface ExtractedReceiptData {
 }
 
 export async function extractReceiptData(base64Image: string, mimeType: string): Promise<ExtractedReceiptData> {
+  const ai = await getAiInstance();
+  
   // Current date in Brazil (America/Sao_Paulo) for reference
   const now = new Date();
   const brDate = new Intl.DateTimeFormat('pt-BR', { 
