@@ -1,16 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
-
-export async function checkAiConfiguration() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return { ok: false, message: "GEMINI_API_KEY não encontrada no ambiente." };
-  if (key === "MY_GEMINI_API_KEY") return { ok: false, message: "A chave ainda é o valor padrão (MY_GEMINI_API_KEY). Configure nos segredos." };
-  
-  const masked = key.length > 8 ? `${key.substring(0, 4)}...${key.substring(key.length - 4)}` : "***";
-  return { ok: true, message: `Chave detectada: ${masked} (Total: ${key.length} caracteres)` };
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export interface ExtractedReceiptData {
   type: 'pix' | 'lottery' | 'credit_card';
   transactionId: string;
@@ -23,6 +10,10 @@ export interface ExtractedReceiptData {
   cnpj?: string;
   isVisualFraud: boolean;
   fraudAnalysis: string;
+}
+
+export async function checkAiConfiguration() {
+  return { ok: true, message: "Modo Servidor Ativado: A chave será validada no processamento durante o envio." };
 }
 
 export async function extractReceiptData(base64Image: string, mimeType: string): Promise<ExtractedReceiptData> {
@@ -60,60 +51,26 @@ export async function extractReceiptData(base64Image: string, mimeType: string):
   - 'fraudAnalysis': Explicação breve do motivo. Se for válido, use "Comprovante íntegro".`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType,
-              data: base64Image.split(',')[1] || base64Image,
-            },
-          },
-          { text: prompt },
-        ],
+    const response = await fetch('/api/extract', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            type: { type: Type.STRING, enum: ['pix', 'lottery', 'credit_card'] },
-            transactionId: { type: Type.STRING },
-            amount: { type: Type.NUMBER },
-            date: { type: Type.STRING },
-            payerName: { type: Type.STRING },
-            receiverName: { type: Type.STRING },
-            bank: { type: Type.STRING },
-            location: { type: Type.STRING },
-            cnpj: { type: Type.STRING },
-            isVisualFraud: { type: Type.BOOLEAN },
-            fraudAnalysis: { type: Type.STRING },
-          },
-          required: ["type", "transactionId", "amount", "date", "payerName", "receiverName", "bank", "isVisualFraud"],
-        },
-      },
+      body: JSON.stringify({
+        base64Image,
+        mimeType,
+        prompt,
+      }),
     });
 
-    const rawText = response.text || "";
-    // Clean markdown if present
-    const jsonMatch = rawText.match(/```json\n?([\s\S]*?)\n?```/) || rawText.match(/```\n?([\s\S]*?)\n?```/);
-    const cleanJson = (jsonMatch ? jsonMatch[1].trim() : rawText.trim());
-    
-    return JSON.parse(cleanJson);
-  } catch (error: any) {
-    console.error("Gemini service error:", error);
-    
-    if (error.message?.includes("API key not valid")) {
-      throw new Error("Chave de API inválida. Verifique os segredos do projeto.");
-    }
-    if (error.message?.includes("User location is not supported")) {
-      throw new Error("O Google Gemini não está disponível na sua região atual (VPN pode ajudar).");
-    }
-    if (error.status === "RESOURCE_EXHAUSTED" || error.message?.includes("quota")) {
-      throw new Error("Limite de uso da IA atingido. Tente novamente em alguns minutos.");
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Erro no servidor (${response.status})`);
     }
 
-    throw new Error(`Erro na IA: ${error.message || "Falha desconhecida na conexão com Google Gemini"}`);
+    return await response.json();
+  } catch (error: any) {
+    console.error("Extraction error:", error);
+    throw new Error(error.message || "Falha na comunicação com o servidor de IA.");
   }
 }
