@@ -3,9 +3,9 @@ import { useDropzone } from 'react-dropzone';
 import { collection, addDoc, query, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { logActivity } from '../lib/logger';
-import { extractReceiptData } from '../services/geminiService';
+import { extractReceiptData, checkAiConfiguration } from '../services/geminiService';
 import { UserProfile, Receipt, ReceiptStatus, Employee } from '../types';
-import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User, ChevronDown } from 'lucide-react';
+import { Upload, FileType, Loader2, CheckCircle2, AlertCircle, X, User, ChevronDown, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -22,6 +22,12 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
   const [authorizedReceivers, setAuthorizedReceivers] = useState<string[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [aiLogs, setAiLogs] = useState<{ time: string, msg: string, type: 'info' | 'error' | 'success' }[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const addLog = (msg: string, type: 'info' | 'error' | 'success' = 'info') => {
+    setAiLogs(prev => [{ time: new Date().toLocaleTimeString(), msg, type }, ...prev].slice(0, 50));
+  };
 
   // Multiple upload states
   const [uploadQueue, setUploadQueue] = useState<{ id: string, file: File, progress: 'pending' | 'processing' | 'done' | 'error', result?: Receipt }[]>([]);
@@ -122,23 +128,31 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
 
       setProcessingIndex(pendingIndex);
       setUploadQueue(prev => prev.map((it, idx) => idx === pendingIndex ? { ...it, progress: 'processing' } : it));
+      addLog(`Iniciando processamento: ${uploadQueue[pendingIndex].file.name}`);
 
       try {
+        const configCheck = await checkAiConfiguration();
+        addLog(configCheck.message, configCheck.ok ? 'success' : 'error');
+
         if (uploadQueue[pendingIndex].file.size > 15 * 1024 * 1024) {
           throw new Error("O arquivo é muito grande (máximo 15MB).");
         }
 
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
+          reader.onload = () => {
+            addLog("Arquivo lido localmente.");
+            resolve(reader.result as string);
+          };
           reader.onerror = () => reject(new Error("Erro ao ler o arquivo local."));
           reader.readAsDataURL(uploadQueue[pendingIndex].file);
         });
         const base64 = await base64Promise;
 
-        console.log(`Iniciando extração para: ${uploadQueue[pendingIndex].file.name}`);
+        addLog("Chamando API Gemini...");
         const extracted = await extractReceiptData(base64, uploadQueue[pendingIndex].file.type);
-        console.log("Extração concluída com sucesso.");
+        addLog("Resposta recebida da IA.", 'success');
+        
         const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
         
         // Validation logic
@@ -169,6 +183,7 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
         }
       } catch (error: any) {
         console.error(error);
+        addLog(`FALHA: ${error.message}`, 'error');
         setUploadQueue(prev => prev.map((it, idx) => idx === pendingIndex ? { ...it, progress: 'error' } : it));
         toast.error(`Erro no arquivo ${pendingIndex + 1}: ${error.message || 'Erro desconhecido'}`);
       }
@@ -230,6 +245,45 @@ export function ReceiptUpload({ profile }: ReceiptUploadProps) {
             <p className="text-xs text-slate-500 dark:text-slate-400">Padrão forense de auditoria de imagem</p>
           </div>
         </div>
+      </div>
+
+      {/* Diagnostic Logs */}
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+        <button 
+          onClick={() => setShowLogs(!showLogs)}
+          className="w-full p-3 flex items-center justify-between text-slate-400 hover:text-white transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Terminal className="w-4 h-4" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Log de Diagnóstico Técnico</span>
+          </div>
+          <ChevronDown className={cn("w-4 h-4 transition-transform", showLogs && "rotate-180")} />
+        </button>
+        <AnimatePresence>
+          {showLogs && (
+            <motion.div 
+              initial={{ height: 0 }}
+              animate={{ height: 'auto' }}
+              exit={{ height: 0 }}
+              className="px-4 pb-4 overflow-hidden"
+            >
+              <div className="bg-slate-950 rounded-xl p-3 h-40 overflow-y-auto font-mono text-[10px] space-y-1">
+                {aiLogs.length === 0 ? (
+                  <p className="text-slate-600 italic">Nenhuma atividade registrada ainda...</p>
+                ) : (
+                  aiLogs.map((log, i) => (
+                    <p key={i} className={cn(
+                      log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : 'text-slate-400'
+                    )}>
+                      <span className="opacity-50 mr-2">[{log.time}]</span>
+                      {log.msg}
+                    </p>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {uploadQueue.length > 0 && (
