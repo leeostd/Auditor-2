@@ -58,7 +58,7 @@ async function startServer() {
       if (!apiKey || apiKey === "" || apiKey === "MY_GEMINI_API_KEY") {
         console.error("ERRO: Nenhuma chave API válida encontrada.");
         return res.status(500).json({ 
-          error: "GEMINI_API_KEY não detectada. DICA: Se você já adicionou nos Segredos, tente REINICIAR o Servidor. Caso contrário, você pode colar a chave manualmente no arquivo 'server.ts' na linha 14." 
+          error: "GEMINI_API_KEY não detectada. DICA: Certifique-se de que o Segredo se chama EXATAMENTE 'GEMINI_API_KEY' (letras maiúsculas). Se o erro persistir, você pode colar a chave manualmente no arquivo 'api/index.ts' na linha 17 para teste imediato." 
         });
       }
 
@@ -128,7 +128,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
+    const distPath = path.resolve(__dirname, '..', 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));
