@@ -3,10 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
-
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +12,10 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // --- CONFIGURAÇÃO MANUAL (RESOLUÇÃO DEFINITIVA) ---
+  // Se o segredo da plataforma falhar, você pode colar sua chave abaixo:
+  const MANUAL_API_KEY = "AIzaSyDd0Bcq5D5JRSjcFCeYb1mqlrogBeWNvSM"; 
+
   // Middleware básico
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -22,26 +23,43 @@ async function startServer() {
 
   // Log de requisições para diagnóstico
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+    });
     next();
   });
 
   // --- ROTAS DE API (DEVEM VIR ANTES DO VITE) ---
   
   app.get("/api/status", (req, res) => {
+    const keys = Object.keys(process.env);
+    const apiKeys = keys.filter(k => k.toLowerCase().includes('gemini') || k.toLowerCase().includes('key'));
+    
+    const key = MANUAL_API_KEY || process.env.GEMINI_API_KEY;
     res.json({ 
       status: "Servidor Auditor PIX Online", 
       time: new Date().toISOString(),
       env: process.env.NODE_ENV || 'development',
-      hasApiKey: !!process.env.GEMINI_API_KEY 
+      detectedKeys: apiKeys,
+      hasGeminiKey: !!key,
+      keySource: MANUAL_API_KEY ? "Manual (Hardcoded)" : "Environment (Secret)",
+      keyLength: key ? key.length : 0,
+      keyPreview: key && key.length > 3 ? `${key.substring(0, 3)}...` : "Não detectada"
     });
   });
 
   app.post("/api/extract", async (req, res) => {
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-        return res.status(500).json({ error: "ERRO: GEMINI_API_KEY não configurada nos Segredos do projeto." });
+      // Prioridade: Chave Manual > Segredo GEMINI_API_KEY
+      const apiKey = MANUAL_API_KEY || process.env.GEMINI_API_KEY;
+      
+      if (!apiKey || apiKey === "" || apiKey === "MY_GEMINI_API_KEY") {
+        console.error("ERRO: Nenhuma chave API válida encontrada.");
+        return res.status(500).json({ 
+          error: "GEMINI_API_KEY não detectada. DICA: Se você já adicionou nos Segredos, tente REINICIAR o Servidor. Caso contrário, você pode colar a chave manualmente no arquivo 'server.ts' na linha 14." 
+        });
       }
 
       const { base64Image, mimeType, prompt } = req.body;
@@ -96,7 +114,16 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: '0.0.0.0', port: 3000 },
+      root: process.cwd(),
+      server: { 
+        middlewareMode: true, 
+        host: '0.0.0.0', 
+        port: 3000,
+        watch: {
+          usePolling: true,
+          interval: 100
+        }
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

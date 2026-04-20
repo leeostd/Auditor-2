@@ -6,16 +6,52 @@ import { UserProfile, UserRole } from './types';
 import { logActivity } from './lib/logger';
 import { useDarkMode } from './hooks/useDarkMode';
 import { Toaster, toast } from 'sonner';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { UserManagement } from './components/UserManagement';
+import { ActivityLogs } from './components/ActivityLogs';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { ReceiptUpload } from './components/ReceiptUpload';
 import { ReceiptList } from './components/ReceiptList';
 import { ReceiverManagement } from './components/ReceiverManagement';
-import { UserManagement } from './components/UserManagement';
-import { ActivityLogs } from './components/ActivityLogs';
-import { LogIn, ShieldCheck, Loader2 } from 'lucide-react';
+import { LogIn, ShieldCheck, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// --- Error Boundary Component (Inlined to prevent resolution issues) ---
+interface EBProps { children: React.ReactNode; }
+interface EBState { hasError: boolean; error: Error | null; }
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  public state: EBState = { hasError: false, error: null };
+  public static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
+  public componentDidCatch(error: Error, errorInfo: React.ErrorInfo) { console.error('Uncaught error:', error, errorInfo); }
+  public render() {
+    if (this.state.hasError) {
+      let errorMessage = "Ocorreu um erro inesperado.";
+      try {
+        const msg = this.state.error?.message || "";
+        if (msg.includes("Quota exceeded")) errorMessage = "Cota do Firestore atingida (50k leituras).";
+        else if (msg.includes("API key")) errorMessage = "Erro na chave de API da Inteligência Artificial.";
+      } catch (e) {}
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+          <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl p-8 text-center border border-slate-100 dark:border-slate-800">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle className="h-8 w-8" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Ops! Algo deu errado</h1>
+            <p className="text-slate-600 dark:text-slate-400 mb-8 text-sm">{errorMessage}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" /> Recarregar Aplicativo
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const { isDark, toggleDarkMode } = useDarkMode();
