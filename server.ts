@@ -14,7 +14,7 @@ async function startServer() {
 
   // --- CONFIGURAÇÃO MANUAL (RESOLUÇÃO DEFINITIVA) ---
   // Se o segredo da plataforma falhar, você pode colar sua chave abaixo:
-  const MANUAL_API_KEY = "AIzaSyDd0Bcq5D5JRSjcFCeYb1mqlrogBeWNvSM"; 
+  const MANUAL_API_KEY = ""; 
 
   // Middleware básico
   app.use(cors());
