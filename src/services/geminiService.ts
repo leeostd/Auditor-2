@@ -65,7 +65,8 @@ export async function extractReceiptData(base64Image: string, mimeType: string):
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Erro no servidor (${response.status})`);
+      const fullError = errorData.detail ? `${errorData.error} ${errorData.detail}` : errorData.error;
+      throw new Error(fullError || `Erro no servidor (${response.status})`);
     }
 
     return await response.json();

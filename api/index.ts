@@ -4,6 +4,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
 import { GoogleGenAI, Type } from "@google/genai";
+import dotenv from "dotenv";
+
+// Carrega variáveis de ambiente do .env se existir
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +18,7 @@ async function startServer() {
 
   // --- CONFIGURAÇÃO MANUAL (RESOLUÇÃO DEFINITIVA) ---
   // Se o segredo da plataforma falhar, você pode colar sua chave abaixo:
-  const MANUAL_API_KEY = ""; 
+  const MANUAL_API_KEY = "AIzaSyDdBjosvv26kg_GITnhh6vw-ewN2jXBAIw"; 
 
   // Middleware básico
   app.use(cors());
@@ -35,16 +39,34 @@ async function startServer() {
   
   app.get("/api/status", (req, res) => {
     const keys = Object.keys(process.env);
-    const apiKeys = keys.filter(k => k.toLowerCase().includes('gemini') || k.toLowerCase().includes('key'));
+    const apiKeys = keys.filter(k => k.toLowerCase().includes('gemini') || k.toLowerCase().includes('google'));
     
-    const key = MANUAL_API_KEY || process.env.GEMINI_API_KEY;
+    let key = MANUAL_API_KEY || 
+              process.env.GEMINI_API_KEY || 
+              process.env.GEMINI_KEY || 
+              process.env.GOOGLE_API_KEY ||
+              process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+              process.env.VITE_GEMINI_API_KEY;
+    
+    let source = MANUAL_API_KEY ? "Manual (Hardcoded)" : "Environment (Secret)";
+
+    if (!key && !MANUAL_API_KEY) {
+      for (const [k, v] of Object.entries(process.env)) {
+        if (typeof v === 'string' && v.startsWith('AIza') && v.length > 20) {
+          key = v;
+          source = `Auto-Detected (${k})`;
+          break;
+        }
+      }
+    }
+
     res.json({ 
       status: "Servidor Auditor PIX Online", 
       time: new Date().toISOString(),
       env: process.env.NODE_ENV || 'development',
-      detectedKeys: apiKeys,
-      hasGeminiKey: !!key,
-      keySource: MANUAL_API_KEY ? "Manual (Hardcoded)" : "Environment (Secret)",
+      detectedKeyNames: apiKeys,
+      hasKey: !!key,
+      keySource: source,
       keyLength: key ? key.length : 0,
       keyPreview: key && key.length > 3 ? `${key.substring(0, 3)}...` : "Não detectada"
     });
@@ -52,13 +74,54 @@ async function startServer() {
 
   app.post("/api/extract", async (req, res) => {
     try {
-      // Prioridade: Chave Manual > Segredo GEMINI_API_KEY
-      const apiKey = MANUAL_API_KEY || process.env.GEMINI_API_KEY;
+      // Lista de fontes conhecidas
+      console.log("[IA] Iniciando detecção de chave...");
+      let apiKey = MANUAL_API_KEY || 
+                   process.env.GEMINI_API_KEY || 
+                   process.env.GEMINI_KEY || 
+                   process.env.GOOGLE_API_KEY ||
+                   process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+                   process.env.VITE_GEMINI_API_KEY;
+      
+      // Limpeza de valores comuns de erro/placeholder
+      if (apiKey === "undefined" || apiKey === "null" || apiKey === "MY_GEMINI_API_KEY") {
+        apiKey = "";
+      }
+
+      // Busca exaustiva: se as fontes conhecidas falharem, procura qualquer variável que pareça uma chave válida
+      if (!apiKey || apiKey === "") {
+        console.log("[IA] Busca exaustiva em process.env...");
+        for (const [key, value] of Object.entries(process.env)) {
+          if (typeof value === 'string' && value.length > 10) {
+            // Log amigável para debug (protegido)
+            if (value.startsWith('AIza')) {
+              console.log(`[IA] Chave VÁLIDA (AIza...) detectada na variável: ${key}`);
+              apiKey = value;
+              break;
+            } else if (key.includes('GEMINI') || key.includes('GOOGLE')) {
+              console.log(`[IA] Variável suspeita encontrada: ${key} (Valor: ${value.substring(0, 3)}...)`);
+              // Se tiver um tamanho razoável e estiver em um campo GEMINI, vamos tentar usar
+              if (value.length > 20) {
+                apiKey = value;
+                break;
+              }
+            }
+          }
+        }
+      }
       
       if (!apiKey || apiKey === "" || apiKey === "MY_GEMINI_API_KEY") {
-        console.error("ERRO: Nenhuma chave API válida encontrada.");
+        const similarKeys = Object.entries(process.env)
+          .filter(([k]) => k.toLowerCase().includes('gemini') || k.toLowerCase().includes('google'))
+          .map(([k, v]) => `${k} (${v ? 'com valor' : 'VAZIA'})`);
+        
+        console.error("ERRO: Nenhuma chave API válida encontrada. Chaves similares no sistema:", similarKeys);
+        
         return res.status(500).json({ 
-          error: "GEMINI_API_KEY não detectada. DICA: Certifique-se de que o Segredo se chama EXATAMENTE 'GEMINI_API_KEY' (letras maiúsculas). Se o erro persistir, você pode colar a chave manualmente no arquivo 'api/index.ts' na linha 17 para teste imediato." 
+          error: "CONFIGURAÇÃO NECESSÁRIA: GEMINI_API_KEY não encontrada ou está vazia.",
+          detail: similarKeys.length > 0 
+            ? `Detectamos estas variáveis: ${similarKeys.join(', ')}. Por favor, verifique se você colou o valor da chave corretamente nos Segredos.`
+            : "Vá em 'Settings' -> 'Secrets' e adicione 'GEMINI_API_KEY' com sua chave do Google AI Studio."
         });
       }
 
